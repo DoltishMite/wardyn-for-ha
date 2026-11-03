@@ -14,6 +14,10 @@ agents/NetlineAgent/Home/HaModule.cs):
 A node writes its line at least every 5 minutes, so a line older than CONNECTED_FOR means it is off or can't reach the server.
 Fields a node doesn't have (no Patches, no antivirus, a network it doesn't measure) are left out, and so are their entities; buttons only
 while Wardyn lets Home Assistant control the nodes (controls), and only for the parts a node has on.
+Devices here (0.3.0; the user: "I was expecting just the 3 nodes I had to list all the things they could do and see"): one per node, with
+everything it does and sees, its network included (the node that measures it); and Wardyn's own, for what's Wardyn-wide (issues, alerts,
+tracked devices, and Wardyn's settings, check library and plans as configuration). The gadgets on a network are a list in the node's
+Devices online, not devices of their own.
 """
 from __future__ import annotations
 
@@ -32,6 +36,15 @@ BUTTONS = [("update", None, "node_update", "mdi:update"), ("restart", None, "nod
            ("patch_scan", "patch", "node_patch_scan", "mdi:package-variant-closed-check"), ("install", "patch", "node_install", "mdi:package-down"),
            ("checks", "checks", "node_run_checks", "mdi:clipboard-play-outline"), ("av_scan", "av", "node_av_scan", "mdi:shield-search"),
            ("speed", "speed", "node_speed_test", "mdi:speedometer"), ("scan", "devices", "node_scan_devices", "mdi:radar")]
+# Wardyn's issue levels (sitetools.html ISSUE_KINDS, siteline_severity_v1): 3 serious, 2 worth a look, 1 note, 0 not shown
+LEVELS = {3: "serious", 2: "worth a look", 1: "note"}
+
+
+def issue(kind: str, lvl: int, area: str, what: str, where: str, iid: str | None = None) -> dict:
+    """One of Wardyn's issues, in Wardyn's own words, with the key Wardyn dismisses it by (sitetools.html issueKey)."""
+    return {"kind": kind, "lvl": lvl, "what": what, "where": where, "key": iid or "|".join([area, where, re.sub(r"[\d.]+", "#", what)])}
+
+
 ALERT_TYPES = ["node_offline", "node_back", "internet_down", "internet_back", "new_device", "threat_found", "check_failing"]
 
 
@@ -67,39 +80,50 @@ def parse(doc: Any, now: datetime) -> Parsed:
     connected = {k: (lambda at: at is not None and now - at <= CONNECTED_FOR)(_at(n.get("t"), tz)) for k, n in nodes.items()}
     names = {k: str(n.get("name") or "A node") for k, n in nodes.items()}
 
+    for k, n in sorted(nodes.items()):
+        out.add_device(Device(f"node.{slug(k)}", names[k], "Node" + (f" · {n['os']}" if isinstance(n.get("os"), str) else ""), via=ROOT))
+    # a network goes on the node that measured it last (Wardyn's own device if that node isn't here); named only where a node has several
+    snap["netdev"] = {}
+    per_node: dict[str, int] = {}
+    for k, n in nets.items():
+        d = f"node.{slug(n.get('by'))}" if n.get("by") in nodes else ROOT
+        snap["netdev"][slug(k)] = d
+        per_node[d] = per_node.get(d, 0) + 1
+
     # ---- networks ----
     for k, n in sorted(nets.items()):
-        dev, name = f"net.{slug(k)}", str(n.get("name") or "A network")
-        out.add_device(Device(dev, name, "Network", via=ROOT))
+        dev, name = snap["netdev"][slug(k)], str(n.get("name") or "A network")
+        many = per_node[dev] > 1 or dev == ROOT
+        key = f"net.{slug(k)}"
+        named = (lambda label: f"{name}: {label}") if many else (lambda label: None)
         measured = _at(n.get("at"), tz)
         attrs = {"network": k, "measured": measured.isoformat() if measured else None, "by": names.get(n.get("by"))}
         up = None
         if isinstance(n.get("up"), bool):
             # (a measurement over 15 minutes old says nothing about now: the node measuring it has gone quiet)
             up = n["up"] and measured is not None and now - measured <= CONNECTED_FOR
-            out.add(Thing(f"{dev}.internet", dev, BINARY, CONNECTIVITY, "net_internet", up, {}, attrs, "mdi:web" if up else "mdi:web-off"))
+            out.add(Thing(f"{key}.internet", dev, BINARY, CONNECTIVITY, "net_internet", up, {}, attrs, "mdi:web" if up else "mdi:web-off", name=named("Internet")))
             if not up:
-                issues.append({"level": "serious", "what": "Internet down" if n["up"] is False else "No recent reading", "where": name})
-            out.add(Thing(f"{dev}.latency", dev, SENSOR, LATENCY, "net_latency", _num(n.get("ms")) if up else None, {}, {}, "mdi:timer-outline"))
+                issues.append(issue("down", 3, "Health", "The internet isn’t answering", name) if n["up"] is False else issue("noreadings", 2, "Health", "No readings lately", name))
+            out.add(Thing(f"{key}.latency", dev, SENSOR, LATENCY, "net_latency", _num(n.get("ms")) if up else None, {}, {}, "mdi:timer-outline", name=named("Internet latency")))
             o24, o7 = _num(n.get("out24")) or 0, _num(n.get("out7")) or 0
-            out.add(Thing(f"{dev}.outages", dev, SENSOR, COUNT, "net_outages", o24, {}, {"last_7_days": o7}, "mdi:lan-disconnect"))
+            out.add(Thing(f"{key}.outages", dev, SENSOR, COUNT, "net_outages", o24, {}, {"last_7_days": o7}, "mdi:lan-disconnect", name=named("Outages (24 hours)")))
             if o24:
-                issues.append({"level": "worth a look", "what": f"{o24} outage{'s' if o24 != 1 else ''} in the last day", "where": name})
+                issues.append(issue("outages", 2, "Health", f"{o24} outage{'s' if o24 != 1 else ''} in the last day", name))
         if _num(n.get("devs")) is not None:
-            out.add(Thing(f"{dev}.devices", dev, SENSOR, COUNT, "net_devices_online", _num(n.get("on")) or 0, {}, {"known": n["devs"]}, "mdi:devices"))
+            out.add(Thing(f"{key}.devices", dev, SENSOR, COUNT, "net_devices_online", _num(n.get("on")) or 0, {}, {"known": n["devs"]}, "mdi:devices", name=named("Devices online")))
         snap["nets"][k] = {"name": name, "up": up}
 
     # ---- nodes ----
     waiting = security = 0
     for k, n in sorted(nodes.items()):
         dev, name, on = f"node.{slug(k)}", names[k], connected[k]
-        out.add_device(Device(dev, name, "Node" + (f" · {n['os']}" if isinstance(n.get("os"), str) else ""), via=ROOT))
         seen = _at(n.get("t"), tz)
         out.add(Thing(f"{dev}.connected", dev, BINARY, CONNECTIVITY, "node_connected", on, {},
                       {"version": n.get("ver"), "last_seen": seen.isoformat() if seen else None}, "mdi:lan-connect" if on else "mdi:lan-disconnect"))
         out.add(Thing(f"{dev}.seen", dev, SENSOR, TIMESTAMP, "node_last_seen", seen, {}, {}, "mdi:clock-check-outline", enabled=False))
         if not on:
-            issues.append({"level": "worth a look", "what": "Not reporting", "where": name})
+            issues.append(issue("quiet", 2, "Computers", "Not reporting", name))
         if _num(n.get("upd")) is not None:
             u, s = int(n["upd"]), int(_num(n.get("sec")) or 0)
             waiting += u; security += s
@@ -107,25 +131,26 @@ def parse(doc: Any, now: datetime) -> Parsed:
                           {"security": s, "held_or_put_off": _num(n.get("held")) or 0, "failed_lately": _num(n.get("failed")) or 0}, "mdi:package-up"))
             out.add(Thing(f"{dev}.restart", dev, BINARY, PROBLEM, "node_restart", bool(n.get("reboot")), {}, {}, "mdi:restart-alert"))
             if s:
-                issues.append({"level": "worth a look", "what": f"{s} security update{'s' if s != 1 else ''} waiting", "where": name})
+                issues.append(issue("security", 2, "Patches", f"{s} security update{'s' if s != 1 else ''} waiting", name))
             if n.get("reboot"):
-                issues.append({"level": "worth a look", "what": "Restart needed to finish updates", "where": name})
+                issues.append(issue("reboot", 2, "Patches", "Restart needed to finish updates", name))
             if _num(n.get("failed")):
-                issues.append({"level": "worth a look", "what": f"{n['failed']} update{'s' if n['failed'] != 1 else ''} failed to install", "where": name})
+                issues.append(issue("failed", 2, "Patches", f"{n['failed']} update{'s' if n['failed'] != 1 else ''} failed to install", name))
         threats = None
         if _num(n.get("threats")) is not None:
             threats = int(n["threats"])
             out.add(Thing(f"{dev}.threats", dev, SENSOR, COUNT, "node_threats", threats, {}, {"antivirus_on": n.get("av")},
                           "mdi:shield-bug-outline" if threats else "mdi:shield-check-outline"))
             if threats:
-                issues.append({"level": "serious", "what": f"{threats} active threat{'s' if threats != 1 else ''}", "where": name})
+                issues.append(issue("threat", 3, "Security", f"{threats} threat{'s' if threats != 1 else ''} found", name))
         c = n.get("checks") if isinstance(n.get("checks"), dict) else {}
         bad = [x for x in c.get("bad") or [] if isinstance(x, str)]
         if _num(c.get("n")):
             warn = [x for x in c.get("warn") or [] if isinstance(x, str)]
             out.add(Thing(f"{dev}.checks", dev, SENSOR, COUNT, "node_checks_failing", len(bad), {}, {"failing": bad, "warnings": warn, "checks": c["n"]},
                           "mdi:clipboard-alert-outline" if bad else "mdi:clipboard-check-outline"))
-            issues.extend({"level": "worth a look", "what": f"Check failing: {b}", "where": name} for b in bad)
+            ids = [x for x in c.get("badIds") or [] if isinstance(x, str)]
+            issues.extend(issue("checkfail", 2, "Checks", f"{b}: failing", name, f"chk|{k}|{ids[i]}" if i < len(ids) else None) for i, b in enumerate(bad))
         if controls:
             parts = {p for p in n.get("parts") or [] if isinstance(p, str)}
             for kind, part, tk, icon in BUTTONS:
@@ -148,8 +173,17 @@ def parse(doc: Any, now: datetime) -> Parsed:
 
     # ---- Wardyn as a whole ----
     if nodes and not any(connected.values()):
-        issues.insert(0, {"level": "serious", "what": "No node is connected", "where": "Wardyn"})
-    issues.sort(key=lambda i: i["level"] != "serious")
+        issues.insert(0, issue("quiet", 3, "Computers", "No node is connected", "Wardyn"))
+    # as Wardyn shows them: your issue levels (0: not shown), and what you dismissed there left out
+    levels = doc.get("levels") if isinstance(doc.get("levels"), dict) else {}
+    dismissed = {x for x in doc.get("dismissed") or [] if isinstance(x, str)}
+    shown = []
+    for i in issues:
+        lvl = levels.get(i["kind"], i["lvl"])
+        lvl = lvl if isinstance(lvl, int) and not isinstance(lvl, bool) and 0 <= lvl <= 3 else i["lvl"]
+        if lvl and i["key"] not in dismissed:
+            shown.append({"level": LEVELS[lvl], "what": i["what"], "where": i["where"], "kind": i["kind"]})
+    issues = sorted(shown, key=lambda i: ["serious", "worth a look", "note"].index(i["level"]))
     out.add(Thing(f"{ROOT}.issues", ROOT, SENSOR, COUNT, "wardyn_issues", len(issues), {}, {"issues": issues[:40]},
                   "mdi:alert-circle-outline" if issues else "mdi:check-circle-outline"))
     serious = [i for i in issues if i["level"] == "serious"]
@@ -162,7 +196,7 @@ def parse(doc: Any, now: datetime) -> Parsed:
         out.add(Thing(f"{ROOT}.updates", ROOT, SENSOR, COUNT, "wardyn_updates", waiting, {}, {"security": security}, "mdi:package-up"))
     out.add(Thing(f"{ROOT}.alerts", ROOT, EVENT, ALERTS, "wardyn_alerts", None, {}, {}, "mdi:bell-ring-outline"))
 
-    catalogue(doc.get("cat"), controls, out, tz)
+    catalogue(doc.get("cat"), controls, out, tz, snap["netdev"])
 
     newdevs = [d for d in doc.get("newdevs") or [] if isinstance(d, dict) and _num(d.get("t"))]
     snap["newdev_t"] = max((d["t"] for d in newdevs), default=0)
@@ -209,24 +243,48 @@ CAT_PLATFORMS = {"sensor": SENSOR, "binary_sensor": BINARY, "switch": SWITCH, "s
 CONTROLS = {SWITCH, SELECT, NUMBER, BUTTON}
 
 
-def catalogue(cat: Any, controls: bool, out: Parsed, tz) -> None:
-    """Wardyn's catalogue -> devices and things (keys "c.<id>"). Its controls only while Wardyn lets Home Assistant change things;
-    a device it names that the copy's own lines don't have (a network device, the settings) comes from its devs."""
+def catalogue(cat: Any, controls: bool, out: Parsed, tz, netdev: dict[str, str] | None = None) -> None:
+    """Wardyn's catalogue -> things (keys "c.<id>") on the nodes and Wardyn's own device: a network's go on the node that measures it,
+    Wardyn-wide ones (settings, checks, plans, uptime) on Wardyn's; the gadgets on a network (the catalogue's "dev.*") become a list in
+    that network's Devices online. Controls only while Wardyn lets Home Assistant change things."""
     if not isinstance(cat, dict) or cat.get("v") != 1:
         return
-    for d in cat.get("devs") or []:
-        if isinstance(d, dict) and isinstance(d.get("id"), str) and d["id"] not in out.devices:
-            out.add_device(Device(d["id"], str(d.get("n") or d["id"]), str(d.get("m") or "Wardyn"), via=d.get("via") if d.get("via") in out.devices or d.get("via") == ROOT else ROOT))
+    netdev = netdev or {}
+    names = {d["id"]: str(d.get("n") or d["id"]) for d in cat.get("devs") or [] if isinstance(d, dict) and isinstance(d.get("id"), str)}
+    via = {d["id"]: d.get("via") for d in cat.get("devs") or [] if isinstance(d, dict) and isinstance(d.get("id"), str)}
+    gadgets: dict[str, list] = {}
+
+    def place(d: Any) -> str | None:
+        d = str(d or "")
+        if d.startswith("node."):
+            return d if d in out.devices else None
+        if d.startswith("net."):
+            return netdev.get(d[4:], ROOT)
+        return None if d.startswith("dev.") else ROOT
+
     for e in cat.get("ents") or []:
         if not isinstance(e, dict) or not isinstance(e.get("id"), str):
             continue
-        platform = CAT_PLATFORMS.get(e.get("p"))
-        dev = e.get("d")
-        if platform is None or dev not in out.devices or (platform in CONTROLS and not controls):
+        d = str(e.get("d") or "")
+        if d.startswith("dev."):
+            if e.get("p") == "binary_sensor" and e["id"].endswith(".online"):
+                a = e.get("a") or {}
+                gadgets.setdefault(str(via.get(d) or ""), []).append({"name": names.get(d, a.get("hardware_address")), "online": bool(e.get("s")), "ip": a.get("ip"),
+                                                                        "maker": a.get("maker"), "hardware_address": a.get("hardware_address"), "known": a.get("known")})
+            continue
+        platform, dev = CAT_PLATFORMS.get(e.get("p")), place(d)
+        if platform is None or dev is None or (platform in CONTROLS and not controls):
             continue
         state = e.get("s")
         if e.get("dc") == "timestamp":
             state = _at(state, tz)
         meta = {k: e[k] for k in ("u", "dc", "sc", "cat", "o", "min", "max", "step") if k in e}
+        if dev == ROOT and not d.startswith("net.") and d not in ("", ROOT) and platform in (SENSOR, BINARY) and "cat" not in meta:
+            meta["cat"] = "diagnostic"   # (Wardyn-wide readings beside its settings: kept out of the way)
         out.add(Thing(f"c.{e['id']}", dev, platform, CAT, "", state, {}, dict(e.get("a") or {}), e.get("ic"),
                       data={"key": e["id"]} if platform in CONTROLS else None, enabled=not e.get("off"), name=str(e.get("n") or e["id"]), meta=meta))
+    for net, items in gadgets.items():
+        t = out.things.get(f"{net}.devices")
+        if t is not None:
+            items.sort(key=lambda x: (not x["online"], str(x["name"] or "").lower()))
+            t.attrs["devices"] = items[:200]

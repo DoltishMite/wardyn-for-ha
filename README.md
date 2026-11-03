@@ -15,14 +15,16 @@ Assistant on its own, and take it back any time.
 | **each node** | **Connected**, **Updates waiting**, **Restart needed**, **Active threats**, **Checks failing**, **Last check-in** (off at first), and buttons: **Update Wardyn Agent**, **Restart Wardyn Agent**, **Look for updates**, **Install updates**, **Run checks**, **Quick antivirus scan**, **Speed test**, **Scan for devices** (only those the node's parts can answer) |
 
 **Everything else Wardyn has** (Wardyn Agent 2.13 or later), drawn from Wardyn's own description of itself, so new Wardyn features
-appear here when your nodes update, with no new integration:
-- **every device on your networks** as its own device: **Online**, **Wake**, and (off at first) address, last seen, open ports, and
-  switches for **Known**, **Hidden in Wardyn**, **Track presence**
+appear here when your nodes update, with no new integration. It's all on **your nodes**, plus one **Wardyn** device for what's
+Wardyn-wide; nothing else gets a device of its own:
 - **each node**: its parts as switches, its **Group**, scan and speed test settings, processor, memory, disks, system details, the
-  updates waiting by name, antivirus state and scans, each check, **Restart the computer**
-- **each network**: router, ISP and DNS latency, lost pings, jitter, public address, traffic now, line speeds, UPnP forwards, the last speed test
-- the **check library** and **maintenance plans** as switches, and **Wardyn settings**: outage thresholds, issue levels, speed test
-  server and package, uptime checks
+  updates waiting by name, antivirus state and scans, each check, **Restart the computer**, and the network it measures: router, ISP and
+  DNS latency, lost pings, jitter, public address, traffic now, line speeds, UPnP forwards, the last speed test, and **Devices online**
+  with every device on the network listed in its details
+- **Wardyn**: the check library and maintenance plans as switches, and Wardyn's settings (outage thresholds, issue levels, speed test
+  server and package, uptime checks), under Configuration
+
+**Issues** and **Problem** are Wardyn's own: the same wording, without the ones you dismissed in Wardyn, at your issue levels.
 
 Switches, selects, numbers and buttons only appear while Wardyn lets Home Assistant control your nodes. Each change is made by one of
 your nodes within about 20 seconds, exactly as if you'd made it in Wardyn.

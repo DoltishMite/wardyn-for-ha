@@ -48,7 +48,9 @@ def test_from_the_agent():
     p = parse(link(), NOW)
     t = p.things
     node, net = "node.demo", "net.b01921c90268"
-    assert p.devices[node].name == "Office PC" and p.devices[node].via == "wardyn" and p.devices[net].name == "The network via 192.168.1.1"
+    assert p.devices[node].name == "Office PC" and p.devices[node].via == "wardyn"
+    # only Wardyn's own device and the nodes: a network's entities are on the node that measures it
+    assert set(p.devices) == {"wardyn", node} and t[f"{net}.internet"].device == node and t[f"{net}.internet"].name is None
     assert (t[f"{node}.connected"].platform, t[f"{node}.connected"].kind, t[f"{node}.connected"].state) == (BINARY, CONNECTIVITY, True)
     assert t[f"{node}.updates"].state == 4 and t[f"{node}.updates"].attrs["failed_lately"] == 1
     assert t[f"{node}.restart"].kind == PROBLEM and t[f"{node}.restart"].state is False
@@ -82,7 +84,23 @@ def test_quiet_node_and_old_reading():
     t = parse(link(t=old, nets={k: dict(v, by=NODE, t=old, at=old) for k, v in AGENT["nets"].items()}), NOW).things
     assert t["node.demo.connected"].state is False and t["net.b01921c90268.latency"].state is None
     serious = [i["what"] for i in t["wardyn.problem"].attrs["serious"]]
-    assert t["wardyn.problem"].state is True and "No node is connected" in serious and "No recent reading" in serious
+    assert t["wardyn.problem"].state is True and "No node is connected" in serious
+
+
+def test_issues_as_wardyn_shows_them():
+    me = dict(AGENT["me"], threats=2, checks={"n": 3, "bad": ["Disk space"], "badIds": ["c1"], "warn": []})
+    nets = {NET: dict(AGENT["nets"][NET], by=NODE, t=AGENT_NOW, up=False)}
+    d = link(me=me, nets=nets)
+    whats = lambda doc: {i["what"]: i["level"] for i in parse(doc, NOW).things["wardyn.issues"].attrs["issues"]}
+    w = whats(d)
+    assert w["The internet isn’t answering"] == "serious" and w["2 threats found"] == "serious" and w["Disk space: failing"] == "worth a look"
+    # dismissed in Wardyn (by Wardyn's own keys), and its issue levels
+    d["dismissed"] = ["Health|The network via 192.168.1.1|The internet isn’t answering", "chk|demo|c1", "Security|Office PC|# threats found"]
+    d["levels"] = {"outages": 0, "failed": 3}
+    w = whats(d)
+    assert "The internet isn’t answering" not in w and "Disk space: failing" not in w and "2 threats found" not in w
+    assert "2 outages in the last day" not in w and w["1 update failed to install"] == "serious"
+    assert parse(d, NOW).things["wardyn.problem"].state is True   # the failed install, now serious
 
 
 def test_not_a_link():
@@ -140,10 +158,12 @@ def test_catalogue_entities():
     assert speed.state == 318.2 and speed.meta["u"] == "Mbit/s" and speed.meta["dc"] == "data_rate"
     started = t["c.node.demo.boot"]
     assert isinstance(started.state, datetime) and started.meta["dc"] == "timestamp"
-    # a device on the network: its own device, hanging off its network; most of its entities off at first
-    assert p.devices["dev.aaaaaaaaaa01"].name == "Sam phone" and p.devices["dev.aaaaaaaaaa01"].via == "net.b01921c90268"
-    assert t["c.dev.aaaaaaaaaa01.online"].enabled and not t["c.dev.aaaaaaaaaa01.ip"].enabled and t["c.dev.aaaaaaaaaa01.known"].enabled is False
-    assert p.devices["settings"].via == "wardyn" and p.devices["checks"].name == "Check library"
+    # no devices of their own: the network's on the node, Wardyn-wide ones (settings, checks, plans) on Wardyn's, the gadgets a list
+    assert set(p.devices) == {"wardyn", "node.demo"}
+    assert t["c.net.b01921c90268.speed_down"].device == "node.demo" and t["c.set.down_after"].device == "wardyn" and t["c.checks.c1"].device == "wardyn"
+    assert not [k for k in t if k.startswith("c.dev.")]
+    gadgets = t["net.b01921c90268.devices"].attrs["devices"]
+    assert "Sam phone" in [g["name"] for g in gadgets] and [g["online"] for g in gadgets] == [True, True, False] and len(gadgets) == 3
 
 
 def test_catalogue_controls_need_wardyns_ok():
@@ -158,6 +178,6 @@ def test_catalogue_ignores_what_it_cant_draw():
     d["cat"] = {"v": 1, "devs": [], "ents": [{"id": "x", "p": "vacuum", "d": "wardyn", "n": "?"}, {"id": "y", "p": "sensor", "d": "nowhere", "n": "?"},
                                               {"id": "z", "p": "sensor", "d": "wardyn", "n": "Fine", "s": 3}]}
     t = parse(d, NOW).things
-    assert "c.x" not in t and "c.y" not in t and t["c.z"].state == 3
+    assert "c.x" not in t and t["c.y"].device == "wardyn" and t["c.z"].state == 3   # (a device this version doesn't know: Wardyn's)
     d["cat"]["v"] = 2
     assert "c.z" not in parse(d, NOW).things

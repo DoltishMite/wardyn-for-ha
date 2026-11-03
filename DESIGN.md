@@ -37,6 +37,10 @@ number / button send `{ node: "*", kind: "set" | "press", key, value }`; the kee
 and makes the change in the synced copy. The state changes here at once (optimistic) until the next catalogue. Controls only while the
 copy's `controls` is true. Entries for a platform or device this version doesn't know are skipped, so the agent can add new kinds first.
 Uptime results are in the agent but need the server to let a node read its list (not yet).
+Where things go (0.3.0, `core/parse.catalogue` place()): devices here are only Wardyn's (`wardyn`) and the nodes'; the catalogue's
+"net.*" go on the node that measures that network, "dev.*" (each gadget) become the `devices` list on that network's Devices online,
+anything else (settings, checks, plans, uptime, a device kind this version doesn't know) on Wardyn's. Issues carry Wardyn's issue key
+(sitetools.html issueKey) and kind, so the copy's `dismissed` and `levels` (Wardyn Agent 2.14) leave them out or set their level.
 
 ## Entities (keys; unique_id `<entry id>_<key>`)
 | Device | Key | Entity | translation_key |
@@ -48,6 +52,9 @@ Uptime results are in the agent but need the server to let a node read its list 
 | | `….btn.<kind>` | button: update, restart, patch_scan, install, checks, av_scan, speed, scan | `node_update` … |
 
 ## Changelog
+- 0.3.0 (2026-11-03): only Wardyn's own device and one per node (the user found a device per network, gadget and setting "extremely
+  noisy"): a network's entities on the node that measures it, Wardyn-wide ones on Wardyn's, the gadgets a list in Devices online; issues
+  in Wardyn's words and keys, without what's dismissed in Wardyn, at your issue levels (needs Wardyn Agent 2.14 for those).
 - 0.2.1 (2026-11-03): the icon has an "HA" badge under it (brand/; the Wardyn Agent add-on keeps the plain one), to tell them apart.
 - 0.2.0 (2026-11-03): Wardyn's catalogue: every network device, node detail and setting, with switches, selects and numbers (needs Wardyn Agent 2.13).
 - 0.1.0 (2026-11-03): first version (needs Wardyn Agent 2.11).
