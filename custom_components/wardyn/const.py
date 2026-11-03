@@ -5,7 +5,7 @@ import logging
 
 DOMAIN = "wardyn"
 LOGGER = logging.getLogger(__package__)
-VERSION = "0.2.0"   # keep in step with manifest.json
+VERSION = "0.2.1"   # keep in step with manifest.json
 
 HUB = "https://launcher.hedgepig.uk"
 SYNC_URL = f"{HUB}/api/sync"

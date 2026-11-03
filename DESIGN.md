@@ -48,5 +48,6 @@ Uptime results are in the agent but need the server to let a node read its list 
 | | `….btn.<kind>` | button: update, restart, patch_scan, install, checks, av_scan, speed, scan | `node_update` … |
 
 ## Changelog
+- 0.2.1 (2026-11-03): the icon has an "HA" badge under it (brand/; the Wardyn Agent add-on keeps the plain one), to tell them apart.
 - 0.2.0 (2026-11-03): Wardyn's catalogue: every network device, node detail and setting, with switches, selects and numbers (needs Wardyn Agent 2.13).
 - 0.1.0 (2026-11-03): first version (needs Wardyn Agent 2.11).
