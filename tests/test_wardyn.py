@@ -113,3 +113,51 @@ def test_alerts():
 def test_no_alerts_without_change():
     a = parse(link(), NOW)
     assert alerts(a.snapshot, parse(copy.deepcopy(link()), NOW).snapshot) == []
+
+
+# ---------- the catalogue (Wardyn Agent 2.13) ----------
+CAT = json.loads((HERE / "agent_catalogue.json").read_text(encoding="utf-8"))
+
+
+def with_cat(controls=True):
+    d = link(controls=controls)
+    d["cat"] = CAT
+    return d
+
+
+def test_catalogue_entities():
+    p = parse(with_cat(), NOW)
+    t = p.things
+    from core.model import CAT as KIND, NUMBER, SELECT, SWITCH
+    cats = {k: x for k, x in t.items() if x.kind == KIND}
+    assert len(cats) > 80
+    sw = t["c.node.demo.part.speed"]
+    assert (sw.platform, sw.state, sw.name, sw.meta["cat"], sw.data) == (SWITCH, True, "Speed tests", "config", {"key": "node.demo.part.speed"})
+    grp = t["c.node.demo.group"]
+    assert grp.platform == SELECT and grp.state == "Servers" and grp.meta["o"] == ["All nodes", "Servers"]
+    assert t["c.set.down_after"].state == "2 minutes" and t["c.set.loss_look"].platform == NUMBER and t["c.set.loss_look"].meta["min"] == 0.5
+    speed = t["c.node.demo.speed_down"]
+    assert speed.state == 318.2 and speed.meta["u"] == "Mbit/s" and speed.meta["dc"] == "data_rate"
+    started = t["c.node.demo.boot"]
+    assert isinstance(started.state, datetime) and started.meta["dc"] == "timestamp"
+    # a device on the network: its own device, hanging off its network; most of its entities off at first
+    assert p.devices["dev.aaaaaaaaaa01"].name == "Sam phone" and p.devices["dev.aaaaaaaaaa01"].via == "net.b01921c90268"
+    assert t["c.dev.aaaaaaaaaa01.online"].enabled and not t["c.dev.aaaaaaaaaa01.ip"].enabled and t["c.dev.aaaaaaaaaa01.known"].enabled is False
+    assert p.devices["settings"].via == "wardyn" and p.devices["checks"].name == "Check library"
+
+
+def test_catalogue_controls_need_wardyns_ok():
+    t = parse(with_cat(controls=False), NOW).things
+    from core.model import CAT as KIND
+    kinds = {x.platform for x in t.values() if x.kind == KIND}
+    assert kinds == {"sensor", "binary_sensor"}   # no switches, selects, numbers or buttons
+
+
+def test_catalogue_ignores_what_it_cant_draw():
+    d = link()
+    d["cat"] = {"v": 1, "devs": [], "ents": [{"id": "x", "p": "vacuum", "d": "wardyn", "n": "?"}, {"id": "y", "p": "sensor", "d": "nowhere", "n": "?"},
+                                              {"id": "z", "p": "sensor", "d": "wardyn", "n": "Fine", "s": 3}]}
+    t = parse(d, NOW).things
+    assert "c.x" not in t and "c.y" not in t and t["c.z"].state == 3
+    d["cat"]["v"] = 2
+    assert "c.z" not in parse(d, NOW).things

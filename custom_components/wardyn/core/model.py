@@ -5,9 +5,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 SENSOR, BINARY, BUTTON, EVENT = "sensor", "binary_sensor", "button", "event"
+SWITCH, SELECT, NUMBER = "switch", "select", "number"
 COUNT, TIMESTAMP, LATENCY = "count", "timestamp", "latency"          # SENSOR kinds (LATENCY: milliseconds)
 PROBLEM, PRESENCE, CONNECTIVITY = "problem", "presence", "connectivity"   # BINARY kinds
 PRESS, ALERTS = "press", "alerts"                                    # BUTTON, EVENT
+CAT = "cat"                                                          # any platform: drawn from Wardyn's catalogue (Thing.meta)
 
 
 @dataclass
@@ -31,6 +33,8 @@ class Thing:
     icon: str | None = None
     data: Any = None               # BUTTON: the request it makes { node, kind }
     enabled: bool = True           # False: the entity starts disabled (the user can switch it on)
+    name: str | None = None        # CAT: its name as Wardyn gives it (no translation)
+    meta: dict[str, Any] = field(default_factory=dict)   # CAT: u (unit), dc, sc, cat, o (options), min, max, step
 
 
 @dataclass

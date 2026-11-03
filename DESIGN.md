@@ -29,6 +29,15 @@ Wardyn page ── makes ──▶ link copy (/api/sync, "wardyn-" keys) ◀─�
 - The server lets a Home Assistant client in by `X-Appline-Client: ha/<version>` (the same rule as Appline's; read, save over an
   existing copy, watch). Only the page makes or deletes the copy.
 
+## The catalogue (0.2.0, Wardyn Agent 2.13)
+The user asked for "all of Wardyn's info … surfaced and controllable … every feature Wardyn has and will have", and chose a
+self-describing design: Wardyn Agent publishes `cat` (the site repo's `agents/NetlineAgent/Home/Catalogue.cs`) and `core/parse.catalogue`
+turns each entry into a Thing (key `c.<id>`, kind CAT, its name, unit, device class, options and limits in `meta`). switch / select /
+number / button send `{ node: "*", kind: "set" | "press", key, value }`; the keeper node checks it against the catalogue it builds itself
+and makes the change in the synced copy. The state changes here at once (optimistic) until the next catalogue. Controls only while the
+copy's `controls` is true. Entries for a platform or device this version doesn't know are skipped, so the agent can add new kinds first.
+Uptime results are in the agent but need the server to let a node read its list (not yet).
+
 ## Entities (keys; unique_id `<entry id>_<key>`)
 | Device | Key | Entity | translation_key |
 |---|---|---|---|
@@ -39,4 +48,5 @@ Wardyn page ── makes ──▶ link copy (/api/sync, "wardyn-" keys) ◀─�
 | | `….btn.<kind>` | button: update, restart, patch_scan, install, checks, av_scan, speed, scan | `node_update` … |
 
 ## Changelog
+- 0.2.0 (2026-11-03): Wardyn's catalogue: every network device, node detail and setting, with switches, selects and numbers (needs Wardyn Agent 2.13).
 - 0.1.0 (2026-11-03): first version (needs Wardyn Agent 2.11).

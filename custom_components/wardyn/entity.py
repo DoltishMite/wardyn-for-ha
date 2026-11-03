@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from homeassistant.core import callback
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity import Entity, EntityCategory
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -27,7 +27,11 @@ class WardynEntity(CoordinatorEntity[WardynCoordinator]):
         t = coordinator.data.things[key]
         d = coordinator.data.devices[t.device]
         self._attr_unique_id = f"{entry_id}_{key}"
-        self._attr_translation_key = t.translation_key
+        if t.name is not None:   # from Wardyn's catalogue: named as Wardyn names it
+            self._attr_name = t.name
+            self._attr_entity_category = {"config": EntityCategory.CONFIG, "diagnostic": EntityCategory.DIAGNOSTIC}.get(t.meta.get("cat"))
+        else:
+            self._attr_translation_key = t.translation_key
         self._attr_device_info = DeviceInfo(
             identifiers={device_identifier(entry_id, d.key)},
             name=d.name,

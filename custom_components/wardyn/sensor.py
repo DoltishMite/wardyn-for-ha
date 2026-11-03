@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 
 from . import WardynConfigEntry
 from .entity import WardynEntity, follow
-from .core.model import COUNT, LATENCY, SENSOR, TIMESTAMP
+from .core.model import CAT, COUNT, LATENCY, SENSOR, TIMESTAMP
 
 
 class WardynSensor(WardynEntity, SensorEntity):
@@ -23,6 +23,14 @@ class WardynSensor(WardynEntity, SensorEntity):
             self._attr_device_class = SensorDeviceClass.DURATION
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = UnitOfTime.MILLISECONDS
+        elif kind == CAT:   # Wardyn's catalogue: its unit, device class and state class as given
+            m = self.thing.meta
+            try:
+                self._attr_device_class = SensorDeviceClass(m["dc"]) if m.get("dc") else None
+            except ValueError:
+                pass
+            self._attr_native_unit_of_measurement = m.get("u") or None
+            self._attr_state_class = SensorStateClass.MEASUREMENT if m.get("sc") == "measurement" else None
 
     @property
     def native_value(self):

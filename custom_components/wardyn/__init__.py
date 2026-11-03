@@ -3,7 +3,9 @@
 Set up with Wardyn's own Home Assistant link code (Wardyn → Settings → Home Assistant), separate from your sync code and from Appline's
 link, so it can be given to a Home Assistant on its own. Each Wardyn Agent writes its state into the sealed link copy; this turns it
 into a device per network and per node with their sensors, tracked devices home or away, alerts (an event entity, and wardyn_alert on
-the bus) and, when Wardyn allows it, buttons that ask a node to update, restart, install updates or scan. Wardyn is also offered as a
+the bus) and, when Wardyn allows it, buttons that ask a node to update, restart, install updates or scan. Wardyn Agent 2.13 adds Wardyn's
+catalogue: every device on the networks, uptime, checks, plans and settings, as sensors, switches, selects, numbers and buttons drawn
+from Wardyn's own description (core/parse.catalogue), so new Wardyn features need no new integration. Wardyn is also offered as a
 sidebar panel.
 """
 from __future__ import annotations
@@ -18,7 +20,7 @@ from .const import CONF_PANEL, DOMAIN, LOGGER, PANEL_PATH, PANEL_URL
 from .coordinator import WardynCoordinator
 from .entity import device_identifier
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SWITCH, Platform.SELECT, Platform.NUMBER]
 type WardynConfigEntry = ConfigEntry[WardynCoordinator]
 
 
@@ -83,8 +85,8 @@ def _tidy(hass: HomeAssistant, entry: WardynConfigEntry) -> None:
             devs.async_update_device(d.id, remove_config_entry_id=entry.entry_id)
         elif d.name != want[ident].name:
             devs.async_update_device(d.id, name=want[ident].name)
-    # Home Assistant keeps an entity's name once worked out: a tracked device renamed in Wardyn needs a reload to show (rare)
-    names = {k: t.placeholders for k, t in data.things.items() if t.placeholders}
+    # Home Assistant keeps an entity's name once worked out: a tracked device (or a catalogue thing) renamed in Wardyn needs a reload to show
+    names = {k: t.placeholders or {"name": t.name} for k, t in data.things.items() if t.placeholders or t.name is not None}
     if any(k in names and names[k] != v for k, v in coordinator.names.items()):
         hass.config_entries.async_schedule_reload(entry.entry_id)
     coordinator.names = names

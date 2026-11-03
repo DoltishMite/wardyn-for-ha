@@ -14,7 +14,9 @@ from .core.model import BUTTON
 class WardynButton(WardynEntity, ButtonEntity):
     async def async_press(self) -> None:
         t = self.thing
-        if t and t.data:
+        if t and t.data and "key" in t.data:   # Wardyn's catalogue: the keeper node does it
+            await self.coordinator.async_request("*", "press", key=t.data["key"])
+        elif t and t.data:
             await self.coordinator.async_request(t.data["node"], t.data["kind"])
 
 

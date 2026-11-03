@@ -7,7 +7,10 @@ agents/NetlineAgent/Home/HaModule.cs):
              nets:  { netKey: { name, by, t, at?, up?, ms?, out24?, out7?, devs?, on? } } },
     presence: [{ id (hardware address), name, home, last, ip, net }],   (the devices tracked in Wardyn: Devices → 🏠 Track presence)
     newdevs: [{ t, mac, net, name, maker, ip }],                         (new on the networks in the last 7 days)
-    requests: [{ id, t, node, kind }], done: { requestId: t } }           (the buttons here, and what the nodes have taken)
+    requests: [{ id, t, node, kind, key?, value? }], done: { requestId: t },   (the controls here, and what the nodes have taken)
+    cat: { v: 1, t, by, devs: [{ id, n, m, via }], ents: [{ id, p, d, n, s, u, dc, sc, ic, off, cat, a, o, min, max, step, w | do }] } }
+  cat is Wardyn's catalogue (Wardyn Agent 2.13+, Home/Catalogue.cs): everything else Wardyn shows and every setting it has, described,
+  so a new Wardyn feature appears here with no new integration. Its controls send { node: "*", kind: "set" | "press", key, value }.
 A node writes its line at least every 5 minutes, so a line older than CONNECTED_FOR means it is off or can't reach the server.
 Fields a node doesn't have (no Patches, no antivirus, a network it doesn't measure) are left out, and so are their entities; buttons only
 while Wardyn lets Home Assistant control the nodes (controls), and only for the parts a node has on.
@@ -18,8 +21,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Any
 
-from .model import (ALERTS, BINARY, BUTTON, CONNECTIVITY, COUNT, EVENT, LATENCY, PRESENCE, PRESS, PROBLEM, SENSOR, TIMESTAMP,
-                    Device, Parsed, Thing)
+from .model import (ALERTS, BINARY, BUTTON, CAT, CONNECTIVITY, COUNT, EVENT, LATENCY, NUMBER, PRESENCE, PRESS, PROBLEM, SELECT, SENSOR,
+                    SWITCH, TIMESTAMP, Device, Parsed, Thing)
 
 ROOT = "wardyn"
 CONNECTED_FOR = timedelta(minutes=15)
@@ -159,6 +162,8 @@ def parse(doc: Any, now: datetime) -> Parsed:
         out.add(Thing(f"{ROOT}.updates", ROOT, SENSOR, COUNT, "wardyn_updates", waiting, {}, {"security": security}, "mdi:package-up"))
     out.add(Thing(f"{ROOT}.alerts", ROOT, EVENT, ALERTS, "wardyn_alerts", None, {}, {}, "mdi:bell-ring-outline"))
 
+    catalogue(doc.get("cat"), controls, out, tz)
+
     newdevs = [d for d in doc.get("newdevs") or [] if isinstance(d, dict) and _num(d.get("t"))]
     snap["newdev_t"] = max((d["t"] for d in newdevs), default=0)
     snap["newdevs"] = newdevs
@@ -198,3 +203,30 @@ def alerts(prev: dict | None, cur: dict) -> list[tuple[str, dict]]:
             out.append(("new_device", {"name": d.get("name") or d.get("maker") or "Unknown device", "maker": d.get("maker"), "ip": d.get("ip"),
                                        "hardware_address": d.get("mac"), "network": (nets.get(d.get("net")) or {}).get("name")}))
     return out
+
+
+CAT_PLATFORMS = {"sensor": SENSOR, "binary_sensor": BINARY, "switch": SWITCH, "select": SELECT, "number": NUMBER, "button": BUTTON}
+CONTROLS = {SWITCH, SELECT, NUMBER, BUTTON}
+
+
+def catalogue(cat: Any, controls: bool, out: Parsed, tz) -> None:
+    """Wardyn's catalogue -> devices and things (keys "c.<id>"). Its controls only while Wardyn lets Home Assistant change things;
+    a device it names that the copy's own lines don't have (a network device, the settings) comes from its devs."""
+    if not isinstance(cat, dict) or cat.get("v") != 1:
+        return
+    for d in cat.get("devs") or []:
+        if isinstance(d, dict) and isinstance(d.get("id"), str) and d["id"] not in out.devices:
+            out.add_device(Device(d["id"], str(d.get("n") or d["id"]), str(d.get("m") or "Wardyn"), via=d.get("via") if d.get("via") in out.devices or d.get("via") == ROOT else ROOT))
+    for e in cat.get("ents") or []:
+        if not isinstance(e, dict) or not isinstance(e.get("id"), str):
+            continue
+        platform = CAT_PLATFORMS.get(e.get("p"))
+        dev = e.get("d")
+        if platform is None or dev not in out.devices or (platform in CONTROLS and not controls):
+            continue
+        state = e.get("s")
+        if e.get("dc") == "timestamp":
+            state = _at(state, tz)
+        meta = {k: e[k] for k in ("u", "dc", "sc", "cat", "o", "min", "max", "step") if k in e}
+        out.add(Thing(f"c.{e['id']}", dev, platform, CAT, "", state, {}, dict(e.get("a") or {}), e.get("ic"),
+                      data={"key": e["id"]} if platform in CONTROLS else None, enabled=not e.get("off"), name=str(e.get("n") or e["id"]), meta=meta))

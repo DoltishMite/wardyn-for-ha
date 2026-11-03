@@ -2,8 +2,10 @@
 
 Changes arrive over the live link (wss /api/live) the moment a node writes; a pull every 5 minutes is the safety net, and the
 entities are worked out again every minute so a node that stops writing goes "not connected" without a new save.
-A button adds a request ({ id, t, node, kind }) to the copy (by: 'ha'), against the version just read, again after a clash; the node
-takes it within 20 seconds and marks it done. Requests over an hour old are tidied away.
+A control adds a request ({ id, t, node, kind, key?, value? }) to the copy (by: 'ha'), against the version just read, again after a
+clash; the node takes it within 20 seconds and marks it done. A catalogue control's ({ node: "*", kind: "set" | "press", key, value })
+is shown here at once (the catalogue's state changed in the copy kept here) until the keeper's next catalogue says how it went.
+Requests over an hour old are tidied away.
 """
 from __future__ import annotations
 
@@ -93,7 +95,7 @@ class WardynCoordinator(DataUpdateCoordinator[Parsed]):
         return p
 
     # ---------- a button ----------
-    async def async_request(self, node: str, kind: str) -> None:
+    async def async_request(self, node: str, kind: str, key: str | None = None, value: Any = None) -> None:
         v, doc = await api.get_doc(self.session, self.keys)
         for _ in range(5):
             if not v:
@@ -105,7 +107,12 @@ class WardynCoordinator(DataUpdateCoordinator[Parsed]):
                 raise HomeAssistantError("Wardyn doesn't let Home Assistant control the nodes (Settings → Home Assistant)")
             now = int(time.time() * 1000)
             reqs = [r for r in obj.get("requests") or [] if isinstance(r, dict) and now - int(r.get("t") or 0) < KEEP_REQUESTS]
-            reqs.append({"id": "h" + format(now, "x") + secrets.token_hex(2), "t": now, "node": node, "kind": kind})
+            req = {"id": "h" + format(now, "x") + secrets.token_hex(2), "t": now, "node": node, "kind": kind}
+            if key is not None:
+                req["key"] = key
+            if kind == "set":
+                req["value"] = value
+            reqs.append(req)
             obj["requests"], obj["by"] = reqs, "ha"
             sealed = await self.hass.async_add_executor_job(seal_doc, obj, self.keys)
             try:
@@ -113,7 +120,12 @@ class WardynCoordinator(DataUpdateCoordinator[Parsed]):
             except api.ApiError as err:
                 raise HomeAssistantError(str(err)) from err
             if status == 200:
+                if kind == "set" and key:
+                    for e in (obj.get("cat") or {}).get("ents") or []:
+                        if isinstance(e, dict) and e.get("id") == key:
+                            e["s"] = value   # shown at once; the keeper's next catalogue says how it went
                 self.doc = (nv, obj)
+                self.async_set_updated_data(self.build())
                 return
             v, doc = nv, cur   # a node saved first: add the request to its version
         raise HomeAssistantError("Kept clashing with the nodes' saves: try again")

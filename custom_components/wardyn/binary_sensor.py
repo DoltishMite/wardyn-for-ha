@@ -16,6 +16,11 @@ class WardynBinarySensor(WardynEntity, BinarySensorEntity):
     def __init__(self, coordinator, key: str) -> None:
         super().__init__(coordinator, key)
         self._attr_device_class = CLASSES.get(self.thing.kind)
+        if self.thing.meta.get("dc"):   # Wardyn's catalogue
+            try:
+                self._attr_device_class = BinarySensorDeviceClass(self.thing.meta["dc"])
+            except ValueError:
+                pass
 
     @property
     def is_on(self) -> bool | None:
