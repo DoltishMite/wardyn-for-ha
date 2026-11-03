@@ -1,0 +1,95 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Wardyn",
+        "description": "Enter Wardyn's Home Assistant link code. Make it in Wardyn: Settings → Home Assistant → Connect to Home Assistant. It's Wardyn's own code, not your sync code or Appline's.",
+        "data": {
+          "code": "Link code",
+          "panel": "Wardyn in the sidebar"
+        },
+        "data_description": {
+          "code": "Letters and digits, with or without the dashes."
+        }
+      },
+      "reconfigure": {
+        "title": "A new link code",
+        "description": "Made a new code in Wardyn? Enter it here: everything stays as it is.",
+        "data": {
+          "code": "Link code"
+        }
+      }
+    },
+    "error": {
+      "invalid_code": "That code doesn't look right: check it and try again.",
+      "not_found": "Nothing is saved under that code. Check Wardyn's Settings → Home Assistant.",
+      "not_a_link": "That's a different kind of code. Use the one from Wardyn's Settings → Home Assistant.",
+      "refused": "The server isn't letting Home Assistant in.",
+      "cannot_connect": "Can't reach the server. Is it running?"
+    },
+    "abort": {
+      "already_configured": "Wardyn is already set up with that code.",
+      "reconfigure_successful": "Done: Wardyn uses the new code."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wardyn",
+        "data": {
+          "panel": "Wardyn in the sidebar"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "wardyn_issues": { "name": "Issues" },
+      "wardyn_nodes_connected": { "name": "Nodes connected" },
+      "wardyn_updates": { "name": "Updates waiting" },
+      "devices_home": { "name": "Devices at home" },
+      "net_latency": { "name": "Internet latency" },
+      "net_outages": { "name": "Outages (24 hours)" },
+      "net_devices_online": { "name": "Devices online" },
+      "node_last_seen": { "name": "Last check-in" },
+      "node_updates": { "name": "Updates waiting" },
+      "node_threats": { "name": "Active threats" },
+      "node_checks_failing": { "name": "Checks failing" }
+    },
+    "binary_sensor": {
+      "wardyn_problem": { "name": "Problem" },
+      "net_internet": { "name": "Internet" },
+      "node_connected": { "name": "Connected" },
+      "node_restart": { "name": "Restart needed" },
+      "device_home": { "name": "{name}" }
+    },
+    "button": {
+      "node_update": { "name": "Update Wardyn Agent" },
+      "node_restart_agent": { "name": "Restart Wardyn Agent" },
+      "node_patch_scan": { "name": "Look for updates" },
+      "node_install": { "name": "Install updates" },
+      "node_run_checks": { "name": "Run checks" },
+      "node_av_scan": { "name": "Quick antivirus scan" },
+      "node_speed_test": { "name": "Speed test" },
+      "node_scan_devices": { "name": "Scan for devices" }
+    },
+    "event": {
+      "wardyn_alerts": {
+        "name": "Alerts",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "node_offline": "A node stopped reporting",
+              "node_back": "A node is back",
+              "internet_down": "Internet down",
+              "internet_back": "Internet back",
+              "new_device": "New device",
+              "threat_found": "Threat found",
+              "check_failing": "Check failing"
+            }
+          }
+        }
+      }
+    }
+  }
+}
